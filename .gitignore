@@ -4,7 +4,7 @@
 !/Containerfile
 !/dev-env.sh
 !/docker-compose.yml
-
+!/*md
 # From workspace/, only the fishbone package
 !/workspace/
 /workspace/*
