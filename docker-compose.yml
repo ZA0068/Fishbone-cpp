@@ -1,0 +1,99 @@
+version: '3.8'
+
+services:
+  vslam-fishbone-dev:
+    # --- UPDATED SECTION START ---
+    # We build the local Containerfile to fix the library mismatches.
+    build:
+      context: .
+      dockerfile: Containerfile
+    image: fishbone-fixed:latest  # Name of the patched image
+    # --- UPDATED SECTION END ---
+
+    container_name: vslam_fishbone_development
+    hostname: vslam-dev
+    
+    # Enable GPU support for NVIDIA CUDA 12.8 (device mapping for Podman)
+    
+    # Environment variables
+    environment:
+      - DISPLAY=${DISPLAY}
+      - QT_X11_NO_MITSHM=1
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=all
+      - CUDA_VISIBLE_DEVICES=all
+      - PYTHONPATH=/opt/conda/lib/python3.12/site-packages:/workspace
+      - ROS_DOMAIN_ID=42
+      - ROS_DISTRO=jazzy
+      - WORKSPACE_DIR=/workspace
+    
+    # Volume mounts for development
+    volumes:
+      # Mount the current VSLAM project directory
+      - ./workspace:/workspace:Z
+      
+      # X11 forwarding for GUI applications (Pangolin, OpenCV displays)
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+      - /dev/dri:/dev/dri:rw
+      
+      # Camera and video devices (if using real cameras)
+      - /dev/video0:/dev/video0:rw
+      - /dev/video1:/dev/video1:rw
+      
+      # Shared memory for efficient data transfer
+      - /dev/shm:/dev/shm:rw
+      
+      # Persistent conda environments and pip packages
+      - vslam_conda_envs:/opt/conda/envs
+      - vslam_pip_cache:/root/.cache/pip
+      
+      # Git configuration
+      - ~/.gitconfig:/root/.gitconfig:ro
+      - ~/.ssh:/root/.ssh:ro
+    
+    # Network configuration
+    network_mode: host
+    
+    # Security and capabilities
+    privileged: true
+    security_opt:
+      - seccomp:unconfined
+    cap_add:
+      - SYS_PTRACE
+      - SYS_ADMIN
+    
+    # Device access
+    devices:
+      - /dev/dri:/dev/dri
+      - /dev/nvidia0:/dev/nvidia0
+      - /dev/nvidiactl:/dev/nvidiactl
+      - /dev/nvidia-modeset:/dev/nvidia-modeset
+      - /dev/nvidia-uvm:/dev/nvidia-uvm
+      - /dev/nvidia-uvm-tools:/dev/nvidia-uvm-tools
+    
+    # Working directory
+    working_dir: /workspace
+    
+    # Keep container running
+    tty: true
+    stdin_open: true
+    
+    # Simple command to keep container running
+    command: ["tail", "-f", "/dev/null"]
+    
+    # Resource limits
+    mem_limit: 8g
+    memswap_limit: 8g
+    shm_size: 2g
+
+# Named volumes for persistent data
+volumes:
+  vslam_conda_envs:
+    driver: local
+  vslam_pip_cache:
+    driver: local
+
+# Network configuration (if needed)
+networks:
+  default:
+    driver: bridge

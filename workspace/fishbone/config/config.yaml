@@ -1,0 +1,139 @@
+# Central config for the fishbone VSLAM pipeline. Edit this file and re-run
+# (no rebuild needed -- these are runtime ROS 2 parameters, not compiled-in
+# constants) to tune the pipeline. Loaded by launch/fishbone_launch.py.
+#
+# Values here are the last hand-tuned defaults from the design conversation.
+
+camera_node:
+  ros__parameters:
+    sequence: "00"
+
+frame_builder_node:
+  ros__parameters:
+    use_stereo: true
+    sequence: "00"
+
+fishbone_node:
+  ros__parameters:
+    sequence: "00"
+
+    image_width: 1241
+    image_height: 376
+
+    foveation:
+      # Foveation (center-biased detection + graduated blur) is retired: it
+      # structurally concentrated tracked features near the image center --
+      # the direction of travel / epipole for a forward-driving car, the worst
+      # place for motion-estimation conditioning (least parallax, most
+      # collinear rays). Confirmed by testing: disabling it (sigmas: [0.0])
+      # measured noticeably better tracking than the foveated baseline.
+      # Detection is now uniform GFTT (Shi-Tomasi) across the whole image,
+      # spatially spread via grid bucketing -- see fovean.cpp's doc comment.
+      bucket_size: 50          # px, spatial bucketing grid cell size
+      # sigmas is kept only so graduated blur can be re-enabled without a
+      # rebuild if ever wanted -- [0.0] means fully disabled (the default).
+      # N values divide the image into N+1 equal concentric zones, outermost-
+      # first; the innermost zone is always sharp. 0/negative/omitted means
+      # "no blur" for that ring. NOTE: a truly empty list ([]) is NOT usable
+      # here -- ROS 2's YAML parameter loader can't infer an array's element
+      # type from zero elements and throws InvalidParameterValueException at
+      # startup; [0.0] is functionally identical (both produce a fully
+      # unblurred image) and is unambiguously a double array.
+      sigmas: [0.0]
+      gftt_max_corners: 1500   # raised from the old fovea-only 200: now covers the whole 1241x376
+                                # frame, not a 100x100 crop -- bucketing, not this cap, governs density
+      gftt_quality_level: 0.01
+      gftt_min_distance: 10.0
+
+    matching:
+      max_accel_px: 4.0             # circularMatch rejection: max plausible px/frame^2
+      subpixel_patch_half_size: 3   # SSD patch half-size for sub-pixel refine (7x7 at default)
+      min_tracked_ratio: 0.5        # replenish once tracked count drops below this fraction of baseline
+      merge_min_separation_px: 10.0 # skip fresh detections within this many px of an existing track
+
+    motion_estimation:
+      # 3D-3D (Kabsch/SVD) RANSAC registration, not PnP -- see soft2_motion.hpp's
+      # Soft2MotionConfig doc comment for why: PnP couples rotation and translation
+      # into one Jacobian, so it failed outright (and lost rotation with it) on
+      # every frame where forward-motion made translation ill-conditioned, which
+      # on KITTI was most of them. We're stereo, so every tracked feature already
+      # has real triangulated depth at both t and t-1 -- no need to go through a
+      # 2D projection at all.
+      ransac_iterations: 300           # RANSAC iterations, each a cheap 3-point closed-form Kabsch fit
+      ransac_inlier_threshold_m: 0.3   # 3D Euclidean residual gate for inlier counting
+      min_points: 6                    # minimum RANSAC inliers to accept a solve
+      max_plausible_translation_m: 5.0 # safety bound: reject solves beyond this per-frame translation
+      # Numerical-conditioning tunables (added after diagnosing ~80% PnP rejection
+      # on this sequence -- see the ground-truth-vs-estimated trajectory plot).
+      min_disparity_px: 2.0        # reject a triangulated point below this stereo disparity (noise floor;
+                                    # was 0.1px, which let near-pure-noise depths into the point cloud)
+      # Tested cutting this to 20.0 to amputate high-Z^2-noise points (theory:
+      # they act as a lever arm skewing Kabsch's rotation fit, since standard
+      # Kabsch assumes isotropic point noise). Measured result: WORSE, not
+      # better, on every metric (RPE trans 0.43m->0.63m, RPE rot 0.67->1.49
+      # deg/frame, aligned ATE mean 145m->196m) -- a hard cutoff throws away
+      # real angular/spatial conditioning along with the noise. Reverted to
+      # 50.0. The theoretically sound version of this fix is a WEIGHTED Kabsch
+      # (per-point 1/Z^2 weight in the centroid + covariance, not a cutoff) --
+      # not implemented; real work, not a config tweak.
+      max_depth_m: 50.0
+      min_point_spread_m: 1.0      # correspondence cloud's X or Y stddev (meters) must clear this before
+                                    # attempting RANSAC at all -- cheaply skips the classic forward-motion
+                                    # degenerate case (points clustered near the direction of travel)
+      max_coast_frames: 10         # on a reject, coast on the last accepted motion instead of freezing to
+                                    # zero -- capped so a genuinely stuck/degenerate run doesn't drift
+                                    # forever on a stale extrapolation
+
+    loop_closure:
+      # Global map / loop closure: keyframes form a pose graph (g2o, SE3
+      # vertices/edges, Levenberg-Marquardt). Consecutive keyframes get an
+      # odometry edge (chained from the raw per-frame VO); a keyframe whose ORB
+      # descriptors + RANSAC/Kabsch-verified 3D points match an earlier, distant
+      # keyframe gets an additional loop edge. Every frame's stored/published
+      # pose is `pose_graph.pose(its_keyframe) * T_local`, so optimizing the
+      # graph on a loop closure retroactively corrects every already-passed
+      # frame's drift for free -- see fishbone_node.hpp's FrameRecord doc comment.
+      enabled: true
+      keyframe_min_translation_m: 5.0   # new keyframe once the raw VO chain has moved this far...
+      keyframe_max_frames: 15           # ...or this many frames have passed, whichever comes first
+      # Weights are effectively spring constants: with ~530 odometry edges vs
+      # (currently) 1 loop edge, the old 5:1 per-edge ratio meant the odometry
+      # chain outweighed the loop constraint in aggregate by ~2600:1 -- the
+      # optimizer took the path of least resistance and mostly just stretched
+      # the single loop edge to absorb the correction instead of bending the
+      # chain. A 155-inlier RANSAC-verified closure is a far stronger single
+      # measurement than any one chained-odometry edge (which is itself just
+      # a lower-confidence VO estimate); invert the trust accordingly.
+      odom_edge_weight: 1.0             # pose-graph edge weight: consecutive-keyframe VO
+      loop_edge_weight: 20.0            # pose-graph edge weight: a verified loop-closure match
+      pose_graph_max_iterations: 20     # Levenberg-Marquardt iterations per optimize() call
+      # Loop-closure detection/verification (LoopClosureDetector):
+      # AKAZE, not ORB: materially better repeatability under viewpoint/affine
+      # change (nonlinear scale space vs. ORB's Gaussian pyramid + BRIEF),
+      # which matters specifically for KITTI's reverse-direction revisits.
+      # Still binary (MLDB), so NORM_HAMMING matching is unchanged. Extracted
+      # from the RAW image (see addKeyframe's caller) -- harmless now that
+      # foveation defaults to disabled, and stays correct if blur is ever
+      # re-enabled (foveation.sigmas) without this needing to change.
+      akaze_threshold: 0.001            # AKAZE detector response threshold -- lower = more keypoints
+      candidate_radius_m: 50.0          # max current-pose distance to consider a past keyframe a candidate --
+                                         # wide because accumulated drift by the time of a genuine revisit can
+                                         # easily be tens of meters; geometric RANSAC verification (min_inliers)
+                                         # is the real false-positive guard, not this search radius
+      min_keyframe_gap: 30              # ignore keyframes fewer than this many indices back (too recent to be a "loop")
+      min_keyframes_between_loops: 5    # rate-limit: skip searching again this soon after the last accepted loop
+      match_ratio_test: 0.75            # Lowe's ratio test threshold for ORB descriptor knnMatch
+      ransac_iterations: 500
+      ransac_inlier_threshold_m: 1.0    # looser than motion_estimation's (cross-viewpoint matches at a genuine
+                                         # revisit have real reprojection uncertainty from stereo depth noise at
+                                         # range, not just an easier bar -- 0.5m/12pt measured "6 near-misses,
+                                         # 0 accepted" on KITTI seq 00, i.e. right at the edge)
+      min_inliers: 10                   # geometric verification acceptance gate -- RANSAC agreement is the
+                                         # real guard against a false accept here, not a high raw match count
+      min_disparity_px: 2.0             # same noise-floor reasoning as motion_estimation.min_disparity_px
+      max_depth_m: 50.0
+
+    output:
+      path_publish_stride: 10        # publish /fishbone/path_estimated every N frames (still appended every frame)
+      pose_file_rewrite_stride: 50   # rewrite /workspace/generated/<sequence>.txt every N frames (always also
+                                      # done immediately after a loop-closure correction, and once at shutdown)

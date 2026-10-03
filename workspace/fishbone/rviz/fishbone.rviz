@@ -1,0 +1,80 @@
+Panels:
+  - Class: rviz_common/Displays
+    Help Height: 78
+    Name: Displays
+    Property Tree Widget:
+      Expanded:
+        - /Global Options1
+        - /Estimated Path1
+        - /Ground Truth Path1
+      Splitter Ratio: 0.5
+    Tree Height: 400
+  - Class: rviz_common/Views
+    Name: Views
+Visualization Manager:
+  Class: ""
+  Displays:
+    - Class: rviz_default_plugins/Grid
+      Enabled: true
+      Name: Grid
+      Plane Cell Count: 20
+      Cell Size: 5
+      Color: 160; 160; 164
+    - Class: rviz_default_plugins/Path
+      Enabled: true
+      Name: Estimated Path
+      Topic:
+        Depth: 10
+        Durability Policy: Volatile
+        Value: /fishbone/path_estimated
+      Color: 25; 255; 0
+      Line Style: Lines
+      Line Width: 0.03
+      Pose Style: None
+    - Class: rviz_default_plugins/Path
+      Enabled: true
+      Name: Ground Truth Path
+      Topic:
+        Depth: 1
+        Durability Policy: Transient Local
+        Value: /fishbone/path_ground_truth
+      Color: 255; 0; 0
+      Line Style: Lines
+      Line Width: 0.03
+      Pose Style: None
+    - Class: rviz_default_plugins/Image
+      Enabled: true
+      Name: Features
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        Value: /fishbone/features_image
+  Enabled: true
+  Global Options:
+    Background Color: 48; 48; 48
+    Fixed Frame: map
+    Frame Rate: 30
+  Name: root
+  Tools:
+    - Class: rviz_default_plugins/Interact
+      Hide Inactive Objects: true
+    - Class: rviz_default_plugins/MoveCamera
+    - Class: rviz_default_plugins/Select
+  Value: true
+  Views:
+    Current:
+      Class: rviz_default_plugins/Orbit
+      Distance: 100
+      Focal Point:
+        X: 0
+        Y: 0
+        Z: 0
+      Name: Current View
+      Pitch: 0.8
+      Yaw: 3.14
+    Saved: ~
+Window Geometry:
+  Height: 900
+  Width: 1600
+  X: 50
+  Y: 50

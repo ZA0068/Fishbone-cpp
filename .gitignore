@@ -1,0 +1,18 @@
+# Whitelist: ignore everything, then allow only what belongs in the repo
+/*
+!/.gitignore
+!/Containerfile
+!/dev-env.sh
+!/docker-compose.yml
+
+# From workspace/, only the fishbone package
+!/workspace/
+/workspace/*
+!/workspace/fishbone/
+
+# Build output inside fishbone
+/workspace/fishbone/build/
+/workspace/fishbone/install/
+/workspace/fishbone/log/
+__pycache__/
+*.py[cod]
